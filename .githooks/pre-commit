@@ -1,0 +1,60 @@
+#!/bin/sh
+
+# Find all staged src/*.cpp, src/*.hpp, src/*.h files
+files=$(git diff --cached --name-only --diff-filter=ACM | grep '^src/.*\.\(cpp\|hpp\|h\)$')
+
+if [ -n "$files" ]; then
+  echo "Running clang-format on staged source files..."
+
+  # Format each file and re-stage if changed
+  changed=0
+  for file in $files; do
+      if [ -f "$file" ]; then
+          clang-format -i "$file"
+          # If the file was modified by clang-format, re-stage it
+          if ! git diff --quiet "$file"; then
+              git add "$file"
+              changed=1
+          fi
+      fi
+  done
+
+  if [ $changed -eq 1 ]; then
+      echo "Some files were reformatted by clang-format and re-staged."
+      echo "Please review the changes and commit again."
+      exit 1
+  fi
+fi
+
+# Start Docker and run tests
+echo "Running tests before commit..."
+
+mkdir -p test/lib/
+cp -r src/ test/lib/
+cp -r include/ test/lib/
+cp CMakeLists.txt test/lib/
+rm -rf test/build-tests/
+
+docker compose -f test/docker-compose.yaml build
+
+# Run docker-compose up (this builds the containers and starts the services)
+docker compose -f test/docker-compose.yaml up -d db
+
+# Run the tests
+docker compose -f test/docker-compose.yaml run --rm -T test
+
+# Check if the tests passed
+TEST_EXIT_CODE=$?
+
+# Clean up containers (optional, but recommended)
+docker compose -f test/docker-compose.yaml down
+
+rm -r test/lib/
+
+if [ $TEST_EXIT_CODE -ne 0 ]; then
+  echo "Tests failed. Commit blocked."
+  exit 1  # Block the commit if tests fail
+fi
+
+echo "Tests passed. Proceeding with commit."
+exit 0

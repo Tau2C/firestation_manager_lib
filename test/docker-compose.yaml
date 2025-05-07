@@ -1,0 +1,37 @@
+services:
+  db:
+    image: postgres
+    container_name: postgres-test
+    environment:
+      POSTGRES_USER: testuser
+      POSTGRES_PASSWORD: testpass
+      POSTGRES_DB: testdb
+    expose:
+      - 5432
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - db
+    environment:
+      DB_HOST: db
+      DB_NAME: testdb
+      DB_USER: testuser
+      DB_PASSWORD: testpass
+
+  interactive:
+    image: ubuntu
+    depends_on:
+      - db
+    volumes:
+      - ./:/app:rw
+    tty: true
+    environment:
+      DB_HOST: db
+      DB_NAME: testdb
+      DB_USER: testuser
+      DB_PASSWORD: testpass
